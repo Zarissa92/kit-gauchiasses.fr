@@ -1,0 +1,29 @@
+# ---------- Secrets et configuration personnelle ----------
+# Contient un mot de passe FTP en clair (ancienne méthode, obsolète)
+bin/publish_site.py
+.env
+*.env
+.directory
+
+# ---------- Données et caches générés (recréés par les scripts) ----------
+data/historique.db
+data/cache/
+veille.html
+__pycache__/
+*.pyc
+
+# ---------- Environnements Python (recréés avec requirements.txt) ----------
+venv/
+venv_blog/
+.venv/
+
+# ---------- Sauvegardes et copies locales ----------
+old/
+export/
+*.bak
+index.avant_*.html
+
+# ---------- Éditeurs ----------
+.vscode/
+.idea/
+*.swp

@@ -1,0 +1,6 @@
+# Dépendances de la veille (build_site.py, publish_site.py)
+# Le reste du dossier n'utilise que la bibliothèque standard.
+feedparser==6.0.10
+yt-dlp==2026.10.26
+# feedparser importe le module cgi, supprimé en Python 3.13 : ce paquet le fournit
+legacy-cgi
