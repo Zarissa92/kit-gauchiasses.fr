@@ -27,3 +27,10 @@ index.avant_*.html
 .vscode/
 .idea/
 *.swp
+CLAUDE.md
+rss.xml
+bin/sauvegarde_logs.sh
+listes/Kadaj.txt
+.gitignore
+listes/SirClap.txt
+listes/Zaza.txt

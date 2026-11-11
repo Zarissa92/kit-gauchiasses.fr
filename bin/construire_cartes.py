@@ -72,10 +72,10 @@ DEBUT_NUAGE = "<!-- NUAGE-TAGS:DEBUT -->"
 FIN_NUAGE = "<!-- NUAGE-TAGS:FIN -->"
 DEBUT_IMMUABLE = "<!-- IMMUABLE:DEBUT"
 ANCRE = re.compile(r'<section class="cartes" aria-label="Cartes">\s*<div class="grille">')
-TITRE_CATEGORIE = re.compile(r"\d+\s*(.+?)\s*\(\d+\)")
+TITRE_CATEGORIE = re.compile(r"(?:\d+\s*)?(.+?)\s*\(\d+\)")  # chiffre de tête facultatif
 API = "https://fr.wikipedia.org/w/api.php"
 UA = "gauchiasses/construire_cartes (build local)"
-VERSION_CACHE = 3  # entrées du cache sans cette version sont redemandées
+VERSION_CACHE = 5  # entrées du cache sans cette version sont redemandées (5 : repli sur logo = de l'infobox)
 VERSION_FICHIERS = 4  # cache des fichiers image : inclut l'URL du fichier
 TAILLE_LOT = 50    # titres par requête (limite de l'API pour un client normal)
 PAUSE = 1.0        # secondes entre deux requêtes
@@ -118,7 +118,7 @@ html,body,body *{{font-family:var(--police-titre) !important}}
 @keyframes tagRouge{{0%,100%{{color:#fff;border-color:#fff;text-shadow:0 0 6px #fff}}3%,12%{{color:var(--rouge);border-color:var(--rouge);text-shadow:0 0 6px var(--rouge)}}15%{{color:#fff;border-color:#fff;text-shadow:0 0 6px #fff}}}}
 @media (prefers-reduced-motion: reduce){{.nuage .tag{{animation:none}}}}
 /* ===== FENÊTRE (popover) ===== */
-.fenetre{{position:fixed;inset:0;margin:auto;width:var(--fenetre-largeur);height:fit-content;max-height:var(--fenetre-hauteur);overflow:auto;box-sizing:border-box;padding:1.2rem;background:var(--fenetre-fond);color:#fff;border:1px solid #fff;box-shadow:0 0 30px rgba(255,255,255,.35)}}
+.fenetre{{position:fixed;inset:0;margin:auto;width:var(--fenetre-largeur);height:fit-content;max-height:var(--fenetre-hauteur);overflow:auto;box-sizing:border-box;padding:1.2rem;background:var(--fenetre-fond);color:#fff;border:1px solid var(--rouge);box-shadow:0 0 30px color-mix(in srgb, var(--rouge) 35%, transparent)}}
 .fenetre::backdrop{{background:var(--fond-voile)}}
 .fenetre-titre{{margin:0 2.6rem 1rem 0;font-size:1.2rem;line-height:1.3;text-transform:uppercase;text-shadow:0 0 8px #fff}}
 .fenetre-fermer{{position:absolute;top:.5rem;right:.5rem;width:2rem;height:2rem;border:1px solid #fff;background:#000;color:#fff;font:inherit;font-size:1.2rem;cursor:pointer}}
@@ -127,10 +127,10 @@ html,body,body *{{font-family:var(--police-titre) !important}}
 /* ===== CARTE : image en haut, texte en bas, crédits dessous ===== */
 .carte-bloc{{display:flex;flex-direction:column;gap:.35rem;min-width:0}}
 .carte,.points .carte{{display:flex;flex-direction:column;aspect-ratio:var(--carte-ratio);height:auto;background:#080000;border:1px solid var(--rouge);overflow:hidden;animation:cadreRouge var(--cadre-periode) ease-in-out infinite}}
-@keyframes cadreRouge{{0%,100%{{border-color:var(--rouge);box-shadow:0 0 6px var(--rouge)}}50%{{border-color:#3d0a0a;box-shadow:0 0 14px var(--rouge)}}}}
+@keyframes cadreRouge{{0%,100%{{border-color:var(--rouge);box-shadow:0 0 6px var(--rouge)}}50%{{border-color:color-mix(in srgb, var(--rouge) 25%, #000);box-shadow:0 0 14px var(--rouge)}}}}
 @media (prefers-reduced-motion: reduce){{.carte,.points .carte{{animation:none}}}}
 .carte-image,.points .carte-image{{flex:0 0 var(--carte-image-part);display:flex;align-items:center;justify-content:center;background:#140000;border-bottom:1px solid var(--rouge);font:700 2.4rem "Courier New",monospace;color:#fff;text-shadow:0 0 6px #fff;overflow:hidden}}
-.carte-image img,.points .carte-image img{{width:100%;height:100%;object-fit:cover;display:block}}
+.carte-image img,.points .carte-image img{{width:100%;height:100%;object-fit:contain;display:block}}
 .carte-texte,.points .carte-corps{{flex:1;min-height:0;padding:.6rem .7rem;display:flex;flex-direction:column;gap:.4rem;overflow:hidden}}
 .carte h3{{margin:0;font-size:.9rem;line-height:1.2;text-transform:uppercase;text-shadow:0 0 6px #fff;overflow-wrap:anywhere}}
 .carte p{{margin:0;font-size:.78rem;line-height:1.35;display:-webkit-box;-webkit-line-clamp:var(--carte-lignes);-webkit-box-orient:vertical;overflow:hidden}}
@@ -143,7 +143,7 @@ html,body,body *{{font-family:var(--police-titre) !important}}
 .carte-plus{{position:absolute;right:.45rem;bottom:.45rem;width:1.8rem;height:1.8rem;display:flex;align-items:center;justify-content:center;border:1px solid var(--rouge);background:#000;color:#fff;font:inherit;font-size:1.1rem;cursor:pointer;z-index:2}}
 .carte-plus:hover,.carte-plus:focus-visible{{background:var(--rouge);color:#000}}
 .carte-credit{{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}}
-.fiche-carte{{position:fixed;inset:0;margin:auto;width:min(760px,calc(100vw - 2rem));height:fit-content;max-height:var(--fenetre-hauteur);overflow:auto;box-sizing:border-box;padding:1.2rem;background:var(--fenetre-fond);color:#fff;border:1px solid var(--rouge);box-shadow:0 0 30px rgba(255,255,255,.35)}}
+.fiche-carte{{position:fixed;inset:0;margin:auto;width:min(760px,calc(100vw - 2rem));height:fit-content;max-height:var(--fenetre-hauteur);overflow:auto;box-sizing:border-box;padding:1.2rem;background:var(--fenetre-fond);color:#fff;border:1px solid var(--rouge);box-shadow:0 0 30px color-mix(in srgb, var(--rouge) 35%, transparent)}}
 .fiche-carte::backdrop{{background:var(--fond-voile)}}
 .fiche-carte-titre{{margin:0 2.6rem .8rem 0;font-size:1.2rem;line-height:1.3;text-transform:uppercase;text-shadow:0 0 8px #fff}}
 .fiche-carte-image{{display:block;max-width:100%;max-height:45vh;margin:0 auto .8rem;object-fit:contain;border:1px solid var(--rouge)}}
@@ -299,6 +299,33 @@ def requete_api(parametres):
         return json.load(reponse)["query"]
 
 
+PARAM_IMAGE_INFOBOX = re.compile(r"\|\s*image\s*=\s*([^\n|}]+)")
+PARAM_LOGO_INFOBOX = re.compile(r"\|\s*logo\s*=\s*([^\n|}]+)")  # repli : certaines infobox de médias
+
+
+def interroger_infobox(titres_pages):
+    """Image déclarée dans l'infobox de l'article (paramètre « image = »).
+    Sert de repli quand Wikipédia ne donne pas d'image principale. Renvoie {page: nom de fichier}."""
+    donnees = requete_api({
+        "prop": "revisions", "rvprop": "content", "rvslots": "main",
+        "titles": "|".join(titres_pages),
+    })
+    trouvees = {}
+    for page in donnees.get("pages", []):
+        revisions = page.get("revisions") or [{}]
+        principal = (revisions[0].get("slots") or {}).get("main") or {}
+        texte = principal.get("content") or principal.get("*") or ""
+        m = PARAM_IMAGE_INFOBOX.search(texte) or PARAM_LOGO_INFOBOX.search(texte)
+        if not m:
+            continue
+        nom = m.group(1).strip()
+        nom = re.sub(r"^\[\[|\]\]$", "", nom).strip().strip("\"'").strip()
+        nom = re.sub(r"^(?:Fichier|File|Image):", "", nom).strip()
+        if nom and nom != "-" and "{" not in nom:
+            trouvees[page["title"]] = nom
+    return trouvees
+
+
 def interroger_pages(titres):
     """Résout un lot de noms : page, homonymie, extrait et image principale de l'article."""
     donnees = requete_api({
@@ -310,6 +337,15 @@ def interroger_pages(titres):
     normalises = {n["from"]: n["to"] for n in donnees.get("normalized", [])}
     redirections = {r["from"]: r["to"] for r in donnees.get("redirects", [])}
     pages = {p["title"]: p for p in donnees["pages"]}
+    # Repli : l'infobox, seulement pour les articles sans image principale
+    sans_image = [
+        p["title"] for p in donnees["pages"]
+        if not (p.get("missing") or p.get("invalid") or "disambiguation" in p.get("pageprops", {})
+                or p.get("pageimage"))
+    ]
+    infobox = {}
+    for i in range(0, len(sans_image), 10):
+        infobox.update(interroger_infobox(sans_image[i:i + 10]))
     resultat = {}
     for titre in titres:
         cible = redirections.get(normalises.get(titre, titre), normalises.get(titre, titre))
@@ -327,7 +363,7 @@ def interroger_pages(titres):
                 "page": page["title"], "motif": None,
                 "extrait": extrait or None,
                 "image_url": (page.get("thumbnail") or {}).get("source"),
-                "image_fichier": page.get("pageimage"),
+                "image_fichier": page.get("pageimage") or infobox.get(page["title"]),
             }
     return resultat
 
@@ -425,7 +461,7 @@ def lien_wikipedia(page: str) -> str:
 
 
 ETIQUETTES_LICENCE = [
-    ("Artist", "Auteur"),
+    ("Artist", "Auteur.ice"),
     ("Credit", "Crédit"),
     ("Attribution", "Attribution"),
     ("AttributionRequired", "Attribution requise"),
@@ -440,14 +476,21 @@ def court(texte: str, longueur: int = 40) -> str:
     return texte if len(texte) <= longueur else texte[:longueur - 1].rstrip() + "…"
 
 
+def licence_affichee(texte: str) -> str:
+    """Libellé de licence en français : « Public domain » devient « Domaine public »."""
+    if texte.strip().lower().startswith("public domain"):
+        return "Domaine public"
+    return texte
+
+
 def credit_court(image_source, fichier) -> str:
     """Ligne de crédit sous la carte : courte, le détail est dans la fiche."""
     lignes = []
     if image_source == "locale":
         lignes.append("Image : fournie dans le fichier texte")
     elif image_source == "wikipedia":
-        auteur = court((fichier or {}).get("auteur") or "auteur non précisé")
-        licence = (fichier or {}).get("licence") or "licence non précisée"
+        auteur = court((fichier or {}).get("auteur") or "auteur.ice non précisé.e")
+        licence = licence_affichee((fichier or {}).get("licence") or "licence non précisée")
         lignes.append(f"Image : {auteur} · {licence}")
     lignes.append(f"Texte : Wikipédia · {LICENCE_TEXTE[1]}")
     return '<p class="carte-credit">' + "<br>".join(html.escape(l) for l in lignes) + "</p>"
@@ -461,7 +504,7 @@ def fiche_html(ident, nom, description, info, image, image_source, fichier, page
     if image_source == "locale":
         lignes.append("<dt>Image</dt><dd>fournie dans le fichier texte</dd>")
     elif image_source == "wikipedia" and not meta:
-        lignes.append("<dt>Image</dt><dd>auteur et licence non précisés</dd>")
+        lignes.append("<dt>Image</dt><dd>auteur.ice et licence non précisé.e.s</dd>")
     for cle, etiquette in ETIQUETTES_LICENCE:
         valeur = meta.get(cle)
         if not valeur:
@@ -469,6 +512,8 @@ def fiche_html(ident, nom, description, info, image, image_source, fichier, page
         if cle == "LicenseUrl":
             v = f'<a href="{html.escape(valeur)}" target="_blank" rel="noopener">{html.escape(valeur)}</a>'
         else:
+            if cle in ("LicenseShortName", "UsageTerms"):
+                valeur = licence_affichee(valeur)
             v = html.escape(re.sub(r"\n\s*\n+", "\n", valeur)).replace("\n", "<br>")
         lignes.append(f"<dt>{etiquette}</dt><dd>{v}</dd>")
     lignes.append(f'<dt>Texte</dt><dd>Wikipédia, <a href="{LICENCE_TEXTE[0]}" target="_blank" rel="noopener">'
@@ -614,6 +659,10 @@ def main() -> int:
             elif info.get("image_url"):
                 source, image = "wikipedia", info["image_url"]
                 fichier = infos_fichiers.get(info["image_fichier"])
+            elif infos_fichiers.get(info.get("image_fichier") or "", {}).get("url"):
+                # Image de l'infobox (pas de miniature Wikipédia) : fichier Commons directement
+                fichier = infos_fichiers[info["image_fichier"]]
+                source, image = "wikipedia", fichier["url"]
             else:
                 source, image, fichier = None, None, None
             rendus.append(carte_bloc(nom, description, info, source, image, fichier, page, f"carte-{next(compteur)}"))

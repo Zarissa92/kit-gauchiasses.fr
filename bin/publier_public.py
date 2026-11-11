@@ -3,7 +3,10 @@
 
 Ce qui est copié dans public/ :
     index.html, favicon.svg          (page principale, vérifiée par le garde immuable)
+    preview.png                      (image d'aperçu des liens partagés, 1200x630)
     veille.html                      (page de veille, à la racine du projet)
+    rss.xml                          (flux RSS du KiosKe entier)
+    rss/*.xml                        (un flux RSS par catégorie, dans rss/)
     fonts/russo-one.woff2, fonts/OFL.txt   (police locale et sa licence)
 
 Les caches, bin/, data/, deploy/ et les fichiers de flux ne sortent jamais de la racine du projet.
@@ -60,10 +63,15 @@ def main() -> None:
     sources = [
         (page, args.public / "index.html"),
         (ROOT / "favicon.svg", args.public / "favicon.svg"),
+        (ROOT / "preview.png", args.public / "preview.png"),
+        (ROOT / "apple-touch-icon.png", args.public / "apple-touch-icon.png"),
         (ROOT / "veille.html", args.public / "veille.html"),
+        (ROOT / "rss.xml", args.public / "rss.xml"),
         (ROOT / "fonts" / "russo-one.woff2", args.public / "fonts" / "russo-one.woff2"),
         (ROOT / "fonts" / "OFL.txt", args.public / "fonts" / "OFL.txt"),
     ]
+    # Un flux RSS par catégorie, généré par build_site.py dans rss/.
+    sources += [(f, args.public / "rss" / f.name) for f in sorted((ROOT / "rss").glob("*.xml"))]
     for source, cible in sources:
         if not source.exists():
             raise SystemExit(f"Fichier absent, rien publié : {source}")

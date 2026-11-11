@@ -1,10 +1,28 @@
-"https://www.infolibertaire.net/feed"
-"https://www.infolibertaire.net/feed"
+[Médias d'enquête]
 "https://portail.basta.media/spip.php?page=backend"
-"https://paris-luttes.info/spip.php?page=backend"
-"https://www.problematik-media.com/feed.xml"
 "https://api.blast-info.fr/rss.xml"
 "https://streetpress.com/rss.xml"
 "https://www.mediapart.fr/journal/podcasts/rss"
+"https://www.monde-diplomatique.fr/rss/"
+[Vidéo et radio]
 "https://www.youtube.com/feeds/videos.xml?channel_id=UCdnaDhU-LDQrIEEmSIfq0-Q"
 "https://www.youtube.com/feeds/videos.xml?channel_id=UCGvjUWz3mGV9cssraATuEsw"
+"https://www.youtube.com/feeds/videos.xml?channel_id=UCT67YOMntJxfRnO_9bXDpvw"
+"https://www.youtube.com/feeds/videos.xml?channel_id=UCYxsgv2jlCcMLq8pNlwrJSQ"
+[Militance et luttes]
+"https://www.infolibertaire.net/feed"
+"https://paris-luttes.info/spip.php?page=backend"
+"https://rezo.net/backend/"
+"https://contre-attaque.net/feed/"
+"https://frustrationmagazine.fr/feed"
+"https://agauche.org/feed/"
+[LGBTQIA++]
+"https://www.problematik-media.com/feed.xml"
+"https://www.outrans.org/feed/"
+[International]
+"https://www.thepinknews.com/feed/"
+"https://orientxxi.info/?page=backend&lang=fr"
+"https://thepinktimes.com/rss.xml"
+[Technologie]
+"https://next.ink/feed/"
+

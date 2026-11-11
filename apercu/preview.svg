@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#000000"/>
+  <rect x="0" y="0" width="1200" height="12" fill="#b3001b"/>
+  <text x="90" y="170" font-family="Noto Sans, DejaVu Sans, sans-serif" font-size="30" font-weight="700" letter-spacing="6" fill="#a3a3a3">MÉLENCHON 2027</text>
+  <text x="90" y="330" font-family="Noto Sans, DejaVu Sans, sans-serif" font-size="104" font-weight="700" fill="#ffffff">EN 2027,</text>
+  <text x="90" y="450" font-family="Noto Sans, DejaVu Sans, sans-serif" font-size="104" font-weight="700" fill="#ffffff">VOTEZ MÉLENCHON</text>
+  <text x="90" y="540" font-family="Noto Sans, DejaVu Sans, sans-serif" font-size="28" fill="#c7c7c7">Pour s'informer : La France insoumise, Jean-Luc Mélenchon, Rima Hassan.</text>
+</svg>

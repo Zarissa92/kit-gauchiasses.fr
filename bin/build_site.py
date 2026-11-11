@@ -7,7 +7,9 @@ Pour chaque article : titre, source, date, description et aperçu
 Sources :
     - flux RSS : RSS_feeds.txt, à côté de ce script ;
     - chaînes Twitch : Twich_feeds.txt, à côté de ce script, via yt-dlp.
-    Réglages locaux (renommer, ignorer un flux) : flux_perso.txt, à côté de ce script.
+    Catégories : une ligne « [Nom] » seule dans l'un de ces fichiers ouvre une catégorie ;
+    les flux ou chaînes qui suivent y vont. Sans catégorie : bloc « Des Liens ».
+    Réglages locaux (renommer, ignorer un flux) : flux_corrige_main.txt, à côté de ce script.
 
 Usage :
     python3 build_site.py                          # tous les articles de chaque flux RSS
@@ -32,6 +34,8 @@ import sys
 import unicodedata
 import urllib.request
 from datetime import datetime, timezone
+from email.utils import format_datetime
+from zoneinfo import ZoneInfo
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
@@ -44,7 +48,7 @@ ROOT = HERE.parent                      # racine du projet
 # Listes du bot Discord, lues uniquement en lecture.
 DEFAULT_FEEDS = ROOT / "RSS_feeds.txt"
 DEFAULT_TWITCH = ROOT / "Twich_feeds.txt"
-LOCAL_CONFIG = ROOT / "flux_perso.txt"
+LOCAL_CONFIG = ROOT / "flux_corrige_main.txt"
 OUT_DIR = ROOT  # la page est écrite à la racine du projet
 CACHE_DIR = ROOT / "data" / "cache"  # caches du build, non synchronisés
 HISTORIQUE_DB = ROOT / "data" / "historique.db"  # tout ce qui a déjà été récupéré (jamais publié)
@@ -53,6 +57,8 @@ NOM_PAGE = "veille.html"  # nom du fichier HTML produit à la racine (modifiable
 LINE_RE = re.compile(r'^\s*"([^"]+)"\s*(?::\s*\d+)?\s*(?:#.*)?$')  # ": ID" accepté, ignoré
 CONFIG_RE = re.compile(r'^\s*(!)?\s*"([^"]+)"\s*(?:\|\s*(.+?))?\s*$')
 TWITCH_LINE_RE = re.compile(r'^\s*"([^"]+)"\s*(?::\s*\d+)?\s*(?:#.*)?$')  # ": ID" accepté, ignoré
+CATEGORY_RE = re.compile(r'^\s*\[([^\[\]]+)\]\s*$')  # « [Catégorie] » seul sur sa ligne
+AUTRES = "Des Liens"  # titre du bloc des sources qui ne sont dans aucune catégorie
 TWITCH_SCAN = 15  # nb de vidéos regardées par chaîne (un appel de détail par vidéo, donc limité)
 UA = "Mozilla/5.0 (compatible; rss-static-site/1.0)"
 PAGE_BYTES = 300_000  # on ne lit que le début des pages pour trouver les <meta>
@@ -67,6 +73,8 @@ def read_feeds(path: Path) -> list[str]:
     for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
+            continue
+        if CATEGORY_RE.match(line):  # ligne de catégorie : lue par read_categories
             continue
         m = LINE_RE.match(line)
         if not m:
@@ -88,7 +96,7 @@ def read_local(path: Path) -> tuple[set[str], dict[str, str]]:
             continue
         m = CONFIG_RE.match(line)
         if not m:
-            print(f"[flux_perso] ligne ignorée (format invalide) : {line}", file=sys.stderr)
+            print(f"[flux_corrige_main] ligne ignorée (format invalide) : {line}", file=sys.stderr)
             continue
         bang, url, name = m.groups()
         if bang:
@@ -105,6 +113,8 @@ def read_twitch(path: Path) -> list[str]:
         line = line.strip()
         if not line or line.startswith("#"):
             continue
+        if CATEGORY_RE.match(line):  # ligne de catégorie : lue par read_categories
+            continue
         m = TWITCH_LINE_RE.match(line)
         if not m:
             print(f"[twitch] ligne ignorée (format invalide) : {line}", file=sys.stderr)
@@ -115,6 +125,31 @@ def read_twitch(path: Path) -> list[str]:
     return names
 
 
+def read_categories(feeds: Path, twitch: Path) -> dict[str, str]:
+    """Catégorie de chaque source. Une ligne « [Nom] » seule ouvre une catégorie ; les sources
+    qui suivent y vont, jusqu'à la ligne suivante. Clé : l'URL d'un flux RSS, ou « twitch:nom »."""
+    categories: dict[str, str] = {}
+    for path, est_twitch in ((feeds, False), (twitch, True)):
+        if not path.exists():
+            continue
+        regex = TWITCH_LINE_RE if est_twitch else LINE_RE
+        courante = None
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            titre = CATEGORY_RE.match(line)
+            if titre:
+                courante = titre.group(1).strip()
+                continue
+            m = regex.match(line)
+            if not m or courante is None:
+                continue
+            cle = f"twitch:{m.group(1).lower().strip()}" if est_twitch else m.group(1)
+            categories.setdefault(cle, courante)  # une source ne garde que sa première catégorie
+    return categories
+
+
 def http_get(url: str, timeout: int = 15, limit: int | None = None) -> tuple[bytes, str]:
     req = urllib.request.Request(url, headers={"User-Agent": UA})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -122,9 +157,11 @@ def http_get(url: str, timeout: int = 15, limit: int | None = None) -> tuple[byt
         return data, resp.geturl()
 
 
-def strip_html(text: str, limit: int = 280) -> str:
+def strip_html(text: str, limit: int | None = 280) -> str:
     text = html.unescape(re.sub(r"<[^>]+>", " ", text or ""))
     text = re.sub(r"\s+", " ", text).strip()
+    if limit is None:
+        return text
     return text[:limit] + "…" if len(text) > limit else text
 
 
@@ -157,12 +194,14 @@ def load_feed(url: str, names: dict[str, str]) -> list[dict]:
         if not link:
             continue
         t = entry.get("published_parsed") or entry.get("updated_parsed")
+        summary_html = entry.get("summary", "")
         items.append({
             "title": entry.get("title") or "Sans titre",
             "link": link,
             "date": datetime(*t[:6], tzinfo=timezone.utc) if t else None,
             "source": source,
-            "summary": strip_html(entry.get("summary", "")),
+            "summary": strip_html(summary_html, limit=280),
+            "content": strip_html(summary_html, limit=None),
             "image": rss_image(entry),
             "key": url,
         })
@@ -217,7 +256,13 @@ def fetch_channel_videos(name: str, limit: int) -> list[dict]:
         vid = str((e or {}).get("id") or "").lstrip("v")
         if vid.isdigit():
             ids.append(vid)
-    return [{"id": vid, **video_details(vid)} for vid in ids]
+    videos = []
+    for vid in ids:
+        try:
+            videos.append({"id": vid, **video_details(vid)})
+        except Exception as exc:  # vidéo invalide (abonnés, supprimée…) : on passe à la suivante
+            print(f"[twitch] {name} : vidéo {vid} ignorée : {exc}", file=sys.stderr)
+    return videos
 
 
 def load_twitch(names: list[str], limit: int, use_cache: bool = True) -> list[dict]:
@@ -241,12 +286,14 @@ def load_twitch(names: list[str], limit: int, use_cache: bool = True) -> list[di
                 cache[v["id"]] = {k: v[k] for k in ("title", "timestamp", "duration", "thumbnail")}
             date = datetime.fromtimestamp(v["timestamp"], timezone.utc) if v.get("timestamp") else None
             duration = format_duration(v.get("duration"))
+            summary_text = f"Durée : {duration}" if duration else ""
             items.append({
                 "title": v.get("title") or "Sans titre",
                 "link": f"https://www.twitch.tv/videos/{v['id']}",
                 "date": date,
                 "source": f"Twitch · {name}",
-                "summary": f"Durée : {duration}" if duration else "",
+                "summary": summary_text,
+                "content": summary_text,
                 "image": v.get("thumbnail"),
                 "kind": "twitch",
                 "key": f"twitch:{name}",
@@ -352,10 +399,12 @@ html, body {
   padding: 2.5rem 2rem;
   background: var(--panel);
   border: 1px solid var(--red-dim);
-  box-shadow: 0 0 30px rgba(255, 255, 255, 0.35), inset 0 0 20px rgba(255, 255, 255, 0.1);
+  box-shadow: 0 0 30px color-mix(in srgb, var(--red) 35%, transparent), inset 0 0 20px color-mix(in srgb, var(--red) 10%, transparent);
   text-align: center;
 }
 .kicker { font-size: 0.85rem; color: var(--red-light); opacity: 0.8; margin-bottom: 1rem; letter-spacing: 0.1em; }
+.retour { display: inline-block; margin-bottom: 1rem; color: var(--red-light); text-decoration: none; border: 1px solid var(--red-light); padding: .35rem .7rem; font-size: .85rem; }
+.retour:hover, .retour:focus-visible { background: var(--red-light); color: #000; }
 h1 { font-size: clamp(1.8rem, 6vw, 2.8rem); line-height: 1.2; margin-bottom: 1.5rem; text-transform: uppercase; }
 .glow {
   color: #fff;
@@ -375,13 +424,19 @@ h1 { font-size: clamp(1.8rem, 6vw, 2.8rem); line-height: 1.2; margin-bottom: 1.5
 @keyframes flicker { 0%, 92%, 100% { opacity: 1; } 93% { opacity: 0.4; } 95% { opacity: 1; } 96% { opacity: 0.6; } }
 @media (max-width: 480px) { .panel { padding: 2rem 1.2rem; } }
 
-/* pluie rouge en CSS pur */
-#pluie { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+/* pluie en CSS pur : un seul thème fixe : violet en tête, rouge, rose foncé, bleu-violet en queue */
+@property --rouge { syntax: '<color>'; inherits: true; initial-value: #ff1a1a; }
+:root {
+  --r-tete: #8f00ff; --r-haut: #ff1a1a; --r-moyen: #b5179e; --r-bas: #4b3fd8;
+}
+#pluie {
+  position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none;
+}
 #pluie i {
   position: absolute; top: 0;
   font: normal 16px/1.15 monospace; white-space: pre; text-align: center;
   color: transparent;
-  background: linear-gradient(to top, #ffd0d0 0, #ff1a1a 6%, rgba(255, 26, 26, .55) 45%, transparent 100%);
+  background: linear-gradient(to top, var(--r-tete) 0, var(--r-haut) 6%, var(--r-moyen) 30%, color-mix(in srgb, var(--r-bas) 60%, transparent) 60%, transparent 100%);
   -webkit-background-clip: text; background-clip: text;
   transform: translateY(-100%);
   animation-name: chute; animation-timing-function: linear; animation-iteration-count: infinite;
@@ -399,7 +454,7 @@ h1 { font-size: clamp(1.8rem, 6vw, 2.8rem); line-height: 1.2; margin-bottom: 1.5
 .categorie-titre { display: flex; align-items: center; gap: .5rem; width: 100%; margin: 0 0 .8rem;
   padding: .6rem .9rem; font: inherit; font-size: 1rem; font-weight: 700; text-align: left; text-transform: uppercase;
   background: var(--panel); color: #fff; border: 1px solid var(--red-dim);
-  box-shadow: 0 0 12px rgba(255, 255, 255, .25), inset 0 0 14px rgba(255, 255, 255, .08);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--red) 25%, transparent), inset 0 0 14px color-mix(in srgb, var(--red) 8%, transparent);
   cursor: pointer; }
 .categorie-titre::after { content: "▸"; margin-left: auto; transition: transform .2s; }
 .categorie-titre:hover, .categorie-titre:focus-visible { color: var(--red-light); outline: none; box-shadow: 0 0 22px var(--red); }
@@ -408,20 +463,22 @@ h1 { font-size: clamp(1.8rem, 6vw, 2.8rem); line-height: 1.2; margin-bottom: 1.5
   width: min(1100px, calc(100vw - 2rem)); height: fit-content; max-height: calc(100vh - 2rem);
   overflow: auto; padding: 2.2rem 1.4rem 1.4rem; box-sizing: border-box;
   background: #0a0000; color: var(--red-light); border: 1px solid var(--red);
-  box-shadow: 0 0 30px rgba(255, 255, 255, .5), inset 0 0 20px rgba(255, 255, 255, .1); }
+  box-shadow: 0 0 30px color-mix(in srgb, var(--red) 50%, transparent), inset 0 0 20px color-mix(in srgb, var(--red) 10%, transparent); }
 .categorie-panneau::backdrop { background: rgba(0, 0, 0, .8); }
 .categorie-panneau h2 { font-size: clamp(1.1rem, 2.6vw, 1.5rem); text-transform: uppercase; color: #fff; margin: 0 2.4rem 1rem 0; }
 .categorie-fermer { position: absolute; top: .5rem; right: .5rem; width: 2rem; height: 2rem; border: 1px solid var(--red-dim); background: #000; color: var(--red); font: inherit; font-size: 1.2rem; cursor: pointer; }
 .categorie-fermer:hover, .categorie-fermer:focus-visible { background: var(--red); color: #000; }
 .compte { font-weight: 400; opacity: .7; font-size: .8rem; }
 
+/* taille des cartes : 75 % de l'ancienne ; tout (cadre, textes, marges, bouton) est réduit du même facteur */
 .carte {
   position: relative; display: flex; flex-direction: column;
+  width: 75%; margin: 0 auto;
   aspect-ratio: 3 / 4; overflow: hidden; text-align: left;
   color: inherit; text-decoration: none;
   background: rgba(8, 0, 0, .92);
   border: 1px solid var(--red-dim);
-  box-shadow: 0 0 12px rgba(255, 255, 255, .25), inset 0 0 14px rgba(255, 255, 255, .08);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--red) 25%, transparent), inset 0 0 14px color-mix(in srgb, var(--red) 8%, transparent);
   transition: border-color .2s, box-shadow .2s, transform .2s;
 }
 .carte:hover, .carte:focus-visible { border-color: var(--red); box-shadow: 0 0 22px var(--red); transform: translateY(-2px); outline: none; }
@@ -431,27 +488,27 @@ h1 { font-size: clamp(1.8rem, 6vw, 2.8rem); line-height: 1.2; margin-bottom: 1.5
 }
 .carte-image img { width: 100%; height: 100%; object-fit: cover; object-position: center 25%; display: block; }
 .carte-image .lettre {
-  font: 700 clamp(3rem, 9vw, 5.5rem) "Courier New", monospace; color: #fff;
+  font: 700 clamp(2.25rem, 6.75vw, 4.125rem) "Courier New", monospace; color: #fff;
   text-shadow: 0 0 6px var(--red), 0 0 22px var(--red);
 }
-.carte-corps { flex: 1; min-height: 0; overflow: hidden; padding: .6rem .7rem 2.4rem; display: block; }
-.carte .meta { font-size: .65rem; color: var(--red-light); opacity: .8; margin-bottom: .3rem; }
-.carte h3 { font-size: .82rem; line-height: 1.2; text-transform: uppercase; margin-bottom: .3rem; color: #fff; overflow-wrap: anywhere; }
-.carte p { font-size: .72rem; line-height: 1.35; color: var(--red-light); overflow-wrap: anywhere; }
+.carte-corps { flex: 1; min-height: 0; overflow: hidden; padding: .45rem .525rem 1.8rem; display: block; }
+.carte .meta { font-size: .4875rem; color: var(--red-light); opacity: .8; margin-bottom: .225rem; }
+.carte h3 { font-size: .615rem; line-height: 1.2; text-transform: uppercase; margin-bottom: .225rem; color: #fff; overflow-wrap: anywhere; }
+.carte p { font-size: .54rem; line-height: 1.35; color: var(--red-light); overflow-wrap: anywhere; }
 .carte-plus {
-  position: absolute; right: .45rem; bottom: .45rem; width: 1.8rem; height: 1.8rem;
+  position: absolute; right: .3375rem; bottom: .3375rem; width: 1.35rem; height: 1.35rem;
   display: flex; align-items: center; justify-content: center;
-  border: 1px solid var(--red); background: #000; color: var(--red); font-size: 1.1rem; transition: all .2s;
+  border: 1px solid var(--red); background: #000; color: var(--red); font-size: .825rem; transition: all .2s;
 }
 .carte:hover .carte-plus, .carte:focus-visible .carte-plus { background: var(--red); color: #000; box-shadow: 0 0 14px var(--red); }
 
 .mentions { position: relative; z-index: 1; max-width: 1200px; width: calc(100% - 32px); margin: 0 auto 2rem; font-size: .75rem; opacity: .7; text-align: center; }
 .mentions a { color: var(--red-light); }
 /* ----- nuage des sources (même principe que la page principale) ----- */
-:root { --rouge: #ff1a1a; --periode: 5s; }
+:root { --periode: 5s; }
 .nuage { display: flex; flex-wrap: wrap; justify-content: center; gap: .4rem; margin: 1.2rem 0 0; padding: .7rem;
-  background: #0a0000; border: 1px solid #fff; box-shadow: 0 0 18px rgba(255, 255, 255, .25); }
-.nuage .tag { display: inline-flex; align-items: center; gap: .35rem; padding: .2rem .55rem; border: 1px solid #fff;
+  background: #0a0000; border: 1px solid var(--red); box-shadow: 0 0 18px color-mix(in srgb, var(--red) 25%, transparent); }
+.nuage .tag { display: inline-flex; align-items: center; gap: .35rem; padding: .2rem .55rem; border: 1px solid var(--red);
   border-radius: .3rem; background: none; color: #fff; font: inherit; font-size: .8rem; line-height: 1.4;
   text-shadow: 0 0 6px #fff; white-space: nowrap; cursor: pointer; animation: tagRouge var(--periode) linear infinite; }
 .nuage .tag .nb { font-size: .72rem; opacity: .75; text-shadow: none; }
@@ -460,6 +517,26 @@ h1 { font-size: clamp(1.8rem, 6vw, 2.8rem); line-height: 1.2; margin-bottom: 1.5
   3%, 12% { color: var(--rouge); border-color: var(--rouge); text-shadow: 0 0 6px var(--rouge); }
   15% { color: #fff; border-color: #fff; text-shadow: 0 0 6px #fff; } }
 @media (prefers-reduced-motion: reduce) { .nuage .tag { animation: none; } }
+/* catégories : un bloc par catégorie de RSS_feeds.txt / Twich_feeds.txt, son nuage à l'intérieur */
+.groupes { margin: 1.2rem 0 0; display: grid; gap: .8rem; }
+.groupe { padding: .6rem .7rem .7rem; background: #0a0000; border: 1px solid var(--red);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--red) 25%, transparent); }
+.groupe h2 { font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; color: var(--red-light); margin: 0 0 .5rem; font-weight: 700; }
+.groupe .nuage { margin: 0; padding: 0; border: 0; background: none; box-shadow: none; justify-content: flex-start; }
+/* flux RSS de chaque catégorie : petite icône dans le coin haut-droit du bloc, couleurs du drapeau trans */
+.groupe { position: relative; }
+.groupe h2 { padding-right: 2rem; }
+.rss-categorie { position: absolute; top: .45rem; right: .45rem; width: 1.5rem; height: 1.5rem; display: block;
+  border: 1px solid #000; border-radius: .3rem; overflow: hidden; line-height: 0; }
+.rss-categorie svg { display: block; width: 100%; height: 100%; }
+.rss-categorie:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+/* Taille : +25 % sur grand écran (panneau, tuiles des sources et fenêtres de catégorie). */
+@media (min-width: 1100px) {
+  .panel, .cartes, .mentions { zoom: 1.25; }  /* les fenêtres de catégorie sont dans .cartes : elles héritent du zoom */
+  .cartes, .mentions { width: min(960px, calc((100vw - 2rem) / 1.25)); max-width: none; }
+  .categorie-panneau { width: min(880px, calc((100vw - 2rem) / 1.25)); }
+  .categorie-panneau .grille { --colonnes: 3; }
+}
 """
 
 
@@ -474,7 +551,7 @@ def rain(seed: int = 42, colonnes: int = 40) -> str:
     parts = []
     for k in range(colonnes):
         left = round(k * 100 / colonnes + rnd.uniform(-0.8, 0.8), 2)
-        duree = round(rnd.uniform(6, 16), 1)
+        duree = round(rnd.uniform(3.6, 9.6), 1)
         retard = round(-rnd.uniform(0, 16), 1)
         texte = "\n".join(rnd.choice(chars) for _ in range(rnd.randint(14, 30)))
         parts.append(f'<i style="left:{left}%;animation-duration:{duree}s;animation-delay:{retard}s">{esc(texte)}</i>')
@@ -508,32 +585,109 @@ def cle_alphabetique(nom: str) -> str:
     return unicodedata.normalize("NFKD", nom).encode("ascii", "ignore").decode().casefold()
 
 
-def render_page(items: list[dict], previews: dict[str, dict], nom_page: str = NOM_PAGE) -> str:
-    # Regroupement par source ; sources dans l'ordre alphabétique, articles les plus récents d'abord.
+ICONE_RSS = (
+    '<svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">'
+    '<rect y="0" width="20" height="4" fill="#5BCEFA"/>'
+    '<rect y="4" width="20" height="4" fill="#F5A9B8"/>'
+    '<rect y="8" width="20" height="4" fill="#FFFFFF"/>'
+    '<rect y="12" width="20" height="4" fill="#F5A9B8"/>'
+    '<rect y="16" width="20" height="4" fill="#5BCEFA"/>'
+    '<g fill="none" stroke="#000" stroke-width="2.4" stroke-linecap="round">'
+    '<circle cx="4.5" cy="15.5" r="1.8" fill="#000" stroke="none"/>'
+    '<path d="M3 10.5a6.5 6.5 0 0 1 6.5 6.5"/>'
+    '<path d="M3 4.5a12.5 12.5 0 0 1 12.5 12.5"/>'
+    "</g></svg>"
+)
+DOSSIER_RSS_CATEGORIES = "rss"  # dossier, à la racine, des flux RSS par catégorie (rss/<nom>.xml)
+
+
+def ordre_des_categories(items: list[dict], categories: dict[str, str]) -> list[str]:
+    """Catégories présentes dans les articles : ordre du fichier de flux, « Des Liens » en dernier."""
+    presentes = {categories.get(i["key"], AUTRES) for i in items}
+    ordre = [c for c in dict.fromkeys(categories.values()) if c in presentes]
+    if AUTRES in presentes:
+        ordre.append(AUTRES)
+    return ordre
+
+
+def slug_categorie(nom: str) -> str:
+    """« Médias d'enquête » -> « medias-d-enquete »."""
+    texte = unicodedata.normalize("NFKD", nom).encode("ascii", "ignore").decode().lower()
+    return re.sub(r"[^a-z0-9]+", "-", texte).strip("-") or "categorie"
+
+
+def slugs_categories(ordre: list[str]) -> dict[str, str]:
+    """Nom de fichier de chaque catégorie. Deux catégories au même nom reçoivent un suffixe -2, -3…"""
+    slugs: dict[str, str] = {}
+    utilises: set[str] = set()
+    for c in ordre:
+        base = slug_categorie(c)
+        s, k = base, 2
+        while s in utilises:
+            s, k = f"{base}-{k}", k + 1
+        utilises.add(s)
+        slugs[c] = s
+    return slugs
+
+
+def render_page(items: list[dict], previews: dict[str, dict], nom_page: str = NOM_PAGE,
+                categories: dict[str, str] | None = None) -> str:
+    categories = categories or {}
+    # Regroupement par source (clé : URL du flux ou twitch:nom). Le nom affiché est celui de
+    # l'article le plus récent, pour qu'un flux renommé n'apparaisse pas deux fois.
+    # Sources dans l'ordre alphabétique, articles les plus récents d'abord.
     epoque = datetime.min.replace(tzinfo=timezone.utc)
     items.sort(key=lambda i: i["date"] or epoque, reverse=True)
     groupes: dict[str, list[dict]] = {}
+    noms: dict[str, str] = {}
     for item in items:
-        groupes.setdefault(item["source"], []).append(item)
-    ordre = sorted(groupes, key=cle_alphabetique)
+        groupes.setdefault(item["key"], []).append(item)
+        noms.setdefault(item["key"], item["source"])
+    ordre = sorted(groupes, key=lambda cle: cle_alphabetique(noms[cle]))
 
-    tags = []
+    # Catégories : dans l'ordre du fichier de flux, « Des Liens » en dernier.
+    par_categorie: dict[str, list[str]] = {}
+    for cle in ordre:
+        par_categorie.setdefault(categories.get(cle, AUTRES), []).append(cle)
+    ordre_categories = ordre_des_categories(items, categories)
+    slugs = slugs_categories(ordre_categories)
+
+    tags_par_categorie: dict[str, list[str]] = {c: [] for c in ordre_categories}
     fenetres = []
-    for n, source in enumerate(ordre):
-        cartes = "".join(render_card(i, previews.get(i["link"], {})) for i in groupes[source])
-        nb = len(groupes[source])
-        decalage = (n * 0.618) % 1  # répartit les passages au rouge dans la période
-        tags.append(
-            f'<button type="button" class="tag" popovertarget="cat-{n}" '
-            f'style="animation-delay:calc(var(--periode) * -{decalage:.3f})">'
-            f'{esc(source)} <span class="nb">×{nb}</span></button>'
-        )
-        fenetres.append(
-            f'<div id="cat-{n}" class="categorie-panneau" popover>'
-            f'<button type="button" class="categorie-fermer" popovertarget="cat-{n}" popovertargetaction="hide" aria-label="Fermer">×</button>'
-            f'<h2>{esc(source)} <span class="compte">({nb})</span></h2>'
-            f'<div class="grille">{cartes}</div></div>'
-        )
+    n = 0  # numéro global de la source : sert à l'identifiant de sa fenêtre
+    for categorie in ordre_categories:
+        for cle in par_categorie[categorie]:
+            source = noms[cle]
+            cartes = "".join(render_card(i, previews.get(i["link"], {})) for i in groupes[cle])
+            nb = len(groupes[cle])
+            decalage = (n * 0.618) % 1  # répartit les passages au rouge dans la période
+            tags_par_categorie[categorie].append(
+                f'<button type="button" class="tag" popovertarget="cat-{n}" '
+                f'style="animation-delay:calc(var(--periode) * -{decalage:.3f})">'
+                f'{esc(source)} <span class="nb">×{nb}</span></button>'
+            )
+            fenetres.append(
+                f'<div id="cat-{n}" class="categorie-panneau" popover>'
+                f'<button type="button" class="categorie-fermer" popovertarget="cat-{n}" popovertargetaction="hide" aria-label="Fermer">×</button>'
+                f'<h2>{esc(source)} <span class="compte">({nb})</span></h2>'
+                f'<div class="grille">{cartes}</div></div>'
+            )
+            n += 1
+
+    blocs = "".join(
+        f'<section class="groupe">'
+        f'<a class="rss-categorie" href="{DOSSIER_RSS_CATEGORIES}/{slugs[c]}.xml" '
+        f'title="Flux RSS : {esc(c)}" aria-label="Flux RSS de la catégorie {esc(c)}">{ICONE_RSS}</a>'
+        f'<h2>{esc(c)} <span class="compte">({len(par_categorie[c])})</span></h2>'
+        f'<div class="nuage" aria-label="{esc(c)}">{"".join(tags_par_categorie[c])}</div></section>'
+        for c in ordre_categories
+    )
+    liens_rss = "".join(
+        f'<link rel="alternate" type="application/rss+xml" title="Le KiosKe : {esc(c)} (flux RSS)" '
+        f'href="{DOSSIER_RSS_CATEGORIES}/{slugs[c]}.xml">'
+        for c in ordre_categories
+    )
+    nuage = f'<div class="groupes">{blocs}</div>'
 
     generated = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M UTC")
     return f"""<!DOCTYPE html>
@@ -541,25 +695,42 @@ def render_page(items: list[dict], previews: dict[str, dict], nom_page: str = NO
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Kiosque</title>
-<meta name="description" content="Kiosque : articles et vidéos des sources suivies, mis à jour automatiquement.">
+<title>KiosKe</title>
+<meta name="description" content="KiosKe : articles et vidéos des sources suivies, mis à jour automatiquement.">
 <meta name="theme-color" content="#000000">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Mélenchon 2027">
+<meta property="og:title" content="KiosKe">
+<meta property="og:description" content="KiosKe : articles et vidéos des sources suivies, mis à jour automatiquement.">
+<meta property="og:url" content="https://gauchiasses.fr/{nom_page}">
+<meta property="og:image" content="https://gauchiasses.fr/preview.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:locale" content="fr_FR">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="KiosKe">
+<meta name="twitter:description" content="KiosKe : articles et vidéos des sources suivies, mis à jour automatiquement.">
+<meta name="twitter:image" content="https://gauchiasses.fr/preview.png">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="alternate" type="application/rss+xml" title="Le KiosKe (flux RSS)" href="rss.xml">
+{liens_rss}
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <style>{CSS}</style>
 </head>
 <body>
 {rain()}
 <main class="panel">
-  <p class="kicker">// kiosque automatique ✨</p>
-  <h1><span class="titre-ligne"><span class="drapeau" aria-hidden="true">🏳️‍⚧️</span><span class="glow">Le Kiosque</span><span class="drapeau" aria-hidden="true">🏳️‍⚧️</span><span class="cursor" aria-hidden="true">▌</span></span></h1>
+  <a class="retour" href="index.html">← Retour au site</a>
+  <p class="kicker">// KiosKe automatique ✨</p>
+  <h1><span class="titre-ligne"><span class="drapeau" aria-hidden="true">🏳️‍⚧️</span><span class="glow">Le KiosKe</span><span class="drapeau" aria-hidden="true">🏳️‍⚧️</span><span class="cursor" aria-hidden="true">▌</span></span></h1>
   <p class="sub">{len(items)} éléments · {len(groupes)} sources</p>
   <p class="sub-petit">Mis à jour le {generated}</p>
-  <div class="nuage" aria-label="Sources">{"".join(tags)}</div>
+  {nuage}
 </main>
 <section class="cartes" aria-label="Fenêtres des sources">
 {"".join(fenetres)}
 </section>
-<p class="mentions">Chaque carte renvoie vers la source d'origine. Textes, images et vidéos : leurs auteurs et sites respectifs.</p>
+<p class="mentions">Chaque carte renvoie vers la source d'origine. Textes, images et vidéos : leurs auteur.ice.s et sites respectifs.</p>
 </body>
 </html>
 """
@@ -590,6 +761,10 @@ class Historique:
             )
         """)
         self.conn.execute("CREATE INDEX IF NOT EXISTS idx_source ON articles(source_key)")
+        try:
+            self.conn.execute("ALTER TABLE articles ADD COLUMN content TEXT")
+        except sqlite3.OperationalError:
+            pass  # colonne déjà existante
 
     def enregistrer(self, items: list[dict]) -> int:
         """Ajoute les nouveaux articles, met à jour les anciens. Retourne le nombre d'articles traités."""
@@ -599,18 +774,19 @@ class Historique:
                 date = it["date"].isoformat() if it["date"] else None
                 self.conn.execute(
                     """
-                    INSERT INTO articles (id, source_key, source, title, link, date, summary, image, kind, premier_vu, dernier_vu)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO articles (id, source_key, source, title, link, date, summary, content, image, kind, premier_vu, dernier_vu)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(id) DO UPDATE SET
                         source     = excluded.source,
                         title      = excluded.title,
                         date       = COALESCE(excluded.date, articles.date),
                         summary    = excluded.summary,
+                        content    = excluded.content,
                         image      = COALESCE(excluded.image, articles.image),
                         dernier_vu = excluded.dernier_vu
                     """,
                     (f"{it['key']}|{it['link']}", it["key"], it["source"], it["title"], it["link"],
-                     date, it["summary"], it["image"], it.get("kind", "rss"), maintenant, maintenant),
+                     date, it["summary"], it.get("content", ""), it["image"], it.get("kind", "rss"), maintenant, maintenant),
                 )
         return len(items)
 
@@ -620,7 +796,7 @@ class Historique:
             return []
         marques = ",".join("?" * len(sources))
         rows = self.conn.execute(
-            f"SELECT source_key, source, title, link, date, summary, image, kind "
+            f"SELECT source_key, source, title, link, date, summary, content, image, kind "
             f"FROM articles WHERE source_key IN ({marques})",
             tuple(sources),
         ).fetchall()
@@ -628,13 +804,59 @@ class Historique:
             {
                 "key": key, "source": source, "title": title, "link": link,
                 "date": datetime.fromisoformat(date) if date else None,
-                "summary": summary or "", "image": image, "kind": kind,
+                "summary": summary or "", "content": content or "", "image": image, "kind": kind,
             }
-            for key, source, title, link, date, summary, image, kind in rows
+            for key, source, title, link, date, summary, content, image, kind in rows
         ]
 
     def fermer(self) -> None:
         self.conn.close()
+
+
+# ---------- Flux RSS ----------
+
+RSS_MAX = 100                       # nombre d'articles dans le flux
+URL_SITE = "https://gauchiasses.fr"
+FUSEAU_PARIS = ZoneInfo("Europe/Paris")
+
+
+def date_rss(d: datetime) -> str:
+    """Date au format RFC 822 (exigé par RSS 2.0), dans l'heure de Paris (CET/CEST)."""
+    if d.tzinfo is None:
+        d = d.replace(tzinfo=timezone.utc)
+    return format_datetime(d.astimezone(FUSEAU_PARIS))
+
+
+def render_rss(items: list[dict], titre: str = "Le KiosKe", adresse_flux: str = f"{URL_SITE}/rss.xml",
+               description: str = "Articles et vidéos des sources suivies, mis à jour automatiquement.") -> str:
+    """Flux RSS 2.0 : les RSS_MAX articles les plus récents de la liste donnée."""
+    epoque = datetime.min.replace(tzinfo=timezone.utc)
+    recents = sorted(items, key=lambda i: i["date"] or epoque, reverse=True)[:RSS_MAX]
+    lignes = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">',
+        "<channel>",
+        f"<title>{esc(titre)}</title>",
+        f"<link>{URL_SITE}/veille.html</link>",
+        f"<description>{esc(description)}</description>",
+        "<language>fr-FR</language>",
+        f"<lastBuildDate>{date_rss(datetime.now(timezone.utc))}</lastBuildDate>",
+        f'<atom:link href="{esc(adresse_flux)}" rel="self" type="application/rss+xml"/>',
+    ]
+    for it in recents:
+        lignes.append("<item>")
+        lignes.append(f"<title>{esc(it['source'] + ' : ' + it['title'])}</title>")
+        lignes.append(f"<link>{esc(it['link'])}</link>")
+        lignes.append(f'<guid isPermaLink="true">{esc(it["link"])}</guid>')
+        if it["date"]:
+            lignes.append(f"<pubDate>{date_rss(it['date'])}</pubDate>")
+        lignes.append(f"<category>{esc(it['source'])}</category>")
+        content = it.get("content") or it.get("summary", "")
+        if content:
+            lignes.append(f"<description>{esc(content)}</description>")
+        lignes.append("</item>")
+    lignes += ["</channel>", "</rss>"]
+    return "\n".join(lignes) + "\n"
 
 
 # ---------- Programme principal ----------
@@ -645,7 +867,7 @@ def main():
                         help="fichier des flux RSS (défaut : RSS_feeds.txt à côté du script)")
     parser.add_argument("-tw", dest="tw", type=Path, default=DEFAULT_TWITCH, metavar="FICHIER",
                         help="fichier des chaînes Twitch (défaut : Twich_feeds.txt à côté du script)")
-    parser.add_argument("--local", type=Path, default=LOCAL_CONFIG, help="réglages locaux (défaut : flux_perso.txt)")
+    parser.add_argument("--local", type=Path, default=LOCAL_CONFIG, help="réglages locaux (défaut : flux_corrige_main.txt)")
     parser.add_argument("--no-twitch", action="store_true", help="ne pas inclure les chaînes Twitch")
     parser.add_argument("--no-previews", action="store_true", help="ne pas visiter les pages pour les aperçus")
     parser.add_argument("--no-cache", action="store_true", help="ignorer les caches (aperçus et Twitch)")
@@ -682,8 +904,36 @@ def main():
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     sortie = OUT_DIR / args.nom
-    sortie.write_text(render_page(items, previews, args.nom), encoding="utf-8")
+    categories = read_categories(args.rss, args.tw)
+    print(f"{len(set(categories.values()))} catégorie(s) lue(s) dans les fichiers de flux")
+    sortie.write_text(render_page(items, previews, args.nom, categories), encoding="utf-8")
     print(f"OK : {len(items)} article(s) écrits dans {sortie}")
+
+    flux = OUT_DIR / "rss.xml"
+    flux.write_text(render_rss(items), encoding="utf-8")
+    print(f"OK : flux RSS écrit dans {flux} ({min(len(items), RSS_MAX)} article(s))")
+
+    # Un flux RSS par catégorie, dans rss/ : mêmes articles, filtrés sur la catégorie de leur source.
+    dossier_rss = OUT_DIR / DOSSIER_RSS_CATEGORIES
+    dossier_rss.mkdir(parents=True, exist_ok=True)
+    ordre = ordre_des_categories(items, categories)
+    slugs = slugs_categories(ordre)
+    for c in ordre:
+        sous_ensemble = [i for i in items if categories.get(i["key"], AUTRES) == c]
+        cible = dossier_rss / f"{slugs[c]}.xml"
+        cible.write_text(render_rss(
+            sous_ensemble,
+            titre=f"Le KiosKe : {c}",
+            adresse_flux=f"{URL_SITE}/{DOSSIER_RSS_CATEGORIES}/{slugs[c]}.xml",
+            description=f"Catégorie « {c} » du KiosKe : articles et vidéos des sources suivies, mis à jour automatiquement.",
+        ), encoding="utf-8")
+        print(f"OK : flux de catégorie écrit dans {cible} ({min(len(sous_ensemble), RSS_MAX)} article(s))")
+    # Supprime les flux d'une catégorie qui n'existe plus.
+    attendus = {f"{s}.xml" for s in slugs.values()}
+    for ancien in dossier_rss.glob("*.xml"):
+        if ancien.name not in attendus:
+            ancien.unlink()
+            print(f"supprimé (catégorie disparue) : {ancien}")
 
 
 if __name__ == "__main__":

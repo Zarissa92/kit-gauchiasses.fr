@@ -1,0 +1,17 @@
+# Réglages locaux de la veille, lus par bin/build_site.py (option --local pour un autre fichier).
+# Ce fichier n'ajoute aucune source : il ne sert qu'à corriger l'affichage de la veille.
+#
+# Format : une ligne par réglage, avec l'URL exacte du flux, entre guillemets, identique
+# à celle de RSS_feeds.txt. Les lignes vides et celles qui commencent par # sont ignorées.
+#
+#   Renommer un flux (le nom affiché sur la veille) :
+#       "URL" | Nom affiché
+#
+#   Ignorer un flux sur la veille, sans le retirer de RSS_feeds.txt :
+#       !"URL"
+#
+# Limites : le renommage ne vaut que pour les flux RSS. Les chaînes Twitch
+# ont leur nom affiché tel quel (« Twitch · nom »).
+# Pour retirer un flux de la veille, retire sa ligne de RSS_feeds.txt (ou ajoute !"URL" ici).
+
+"https://www.mediapart.fr/journal/podcasts/rss" | Mediapart (podcasts)

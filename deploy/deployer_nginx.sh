@@ -27,6 +27,15 @@ WEBROOT_ACME="/var/www/html"
 EMAIL=""
 SANS_CERT=0
 
+# Page « Tu es banni » (fail2ban, nginx-geo-ban) : créée par fail2ban_hardened/f2b.sh sur le serveur.
+# Incluse dans chaque bloc server seulement si elle existe : sinon nginx refuserait la configuration.
+FAIL2BAN_SNIPPET="/etc/nginx/snippets/fail2ban-banni.conf"
+if [[ -f "$FAIL2BAN_SNIPPET" ]]; then
+    BAN_INCLUDE="    include $FAIL2BAN_SNIPPET; # fail2ban-banni"
+else
+    BAN_INCLUDE="    # fail2ban-banni absent : lance fail2ban_hardened/f2b.sh sur le serveur, puis relance ce script"
+fi
+
 info()    { printf '\033[1;34m[info]\033[0m %s\n' "$*"; }
 avert()   { printf '\033[1;33m[attention]\033[0m %s\n' "$*"; }
 erreur()  { printf '\033[1;31m[erreur]\033[0m %s\n' "$*" >&2; exit 1; }
@@ -100,6 +109,7 @@ info "Configuration HTTP seule"
 appliquer_config <<EOF
 # Généré par deploy/deployer_nginx.sh : ne pas éditer à la main (relancer le script).
 server {
+$BAN_INCLUDE
     listen 80;
     listen [::]:80;
     server_name $DOMAINE;
@@ -158,6 +168,7 @@ if [[ -d "$CERT_DIR" ]]; then
     appliquer_config <<EOF
 # Généré par deploy/deployer_nginx.sh : ne pas éditer à la main (relancer le script).
 server {
+$BAN_INCLUDE
     listen 80;
     listen [::]:80;
     server_name $DOMAINE;
@@ -172,15 +183,33 @@ server {
 }
 
 server {
+$BAN_INCLUDE
     listen 443 ssl http2;
     listen [::]:443 ssl http2;
     server_name $DOMAINE;
 
     ssl_certificate     $CERT_DIR/fullchain.pem;
     ssl_certificate_key $CERT_DIR/privkey.pem;
+    ssl_session_tickets off;
 
     root $RACINE;
     index index.html;
+
+    # En-têtes de sécurité (always : aussi sur les réponses d'erreur).
+    # Écrits ici en clair, sans fichier à inclure : le déploiement reste autonome.
+    server_tokens off;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()" always;
+    # Pas de JavaScript sur le site : script-src 'self' suffit. Images : toute source HTTPS.
+    add_header Content-Security-Policy "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'" always;
+
+    # Site statique : seules les lectures sont acceptées
+    if (\$request_method !~ ^(GET|HEAD)\$) {
+        return 405;
+    }
 
     location ~ /\. {
         deny all;
@@ -191,8 +220,15 @@ server {
         try_files \$uri \$uri/ =404;
     }
 
+    # add_header dans une location efface ceux du bloc server : on les répète ici
     location /veille/ {
-        add_header Cache-Control "no-cache";
+        add_header Cache-Control "no-cache" always;
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()" always;
+        add_header Content-Security-Policy "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'" always;
     }
 
     access_log /var/log/nginx/$DOMAINE.access.log;
