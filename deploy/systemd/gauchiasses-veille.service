@@ -1,0 +1,23 @@
+# Modèle d'unité systemd : deploy/installer_serveur.sh remplace les __MARQUEURS__ (utilisateur, dossier,
+# racine web de gauchiasses.cfg) et copie le résultat dans /etc/systemd/system/.
+[Unit]
+Description=Construction et publication de gauchiasses.fr (deploy/gauchiasses.sh veille)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=__UTILISATEUR__
+Group=__GROUPE__
+# Écriture dans la racine web (groupe www-data).
+SupplementaryGroups=www-data
+WorkingDirectory=__DOSSIER__
+ExecStart=/bin/bash __DOSSIER__/deploy/gauchiasses.sh veille
+# Les fichiers publiés (dossier servi par nginx) prennent les rôles www-data:www-data.
+# Le « + » fait lancer cette commande en root, quel que soit User= ci-dessus.
+ExecStartPost=+/bin/chown -R www-data:www-data __RACINE_WEB__
+# Fichiers créés en 664 (groupe www-data) : le dossier est en setgid, le groupe est hérité.
+UMask=0002
+TimeoutStartSec=900
+Nice=10
+# Journal : journalctl -u gauchiasses-veille.service

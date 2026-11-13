@@ -1,4 +1,4 @@
-# Réglages locaux de la veille, lus par bin/build_site.py (option --local pour un autre fichier).
+# Réglages locaux de la veille (sources/flux_corrige_main.txt), lus par bin/build_site.py (option --local pour un autre fichier).
 # Ce fichier n'ajoute aucune source : il ne sert qu'à corriger l'affichage de la veille.
 #
 # Format : une ligne par réglage, avec l'URL exacte du flux, entre guillemets, identique
@@ -15,3 +15,4 @@
 # Pour retirer un flux de la veille, retire sa ligne de RSS_feeds.txt (ou ajoute !"URL" ici).
 
 "https://www.mediapart.fr/journal/podcasts/rss" | Mediapart (podcasts)
+"https://agauche.org/feed/" | À gauche

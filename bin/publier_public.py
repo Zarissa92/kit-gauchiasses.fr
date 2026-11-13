@@ -1,84 +1,16 @@
 #!/usr/bin/env python3
-"""Construit la veille puis copie le site dans public/ (exécuté sur le serveur).
+"""Construit le site puis le copie dans la racine servie par nginx. Voir gauchiasses/publication.py.
 
-Ce qui est copié dans public/ :
-    index.html, favicon.svg          (page principale, vérifiée par le garde immuable)
-    preview.png                      (image d'aperçu des liens partagés, 1200x630)
-    veille.html                      (page de veille, à la racine du projet)
-    rss.xml                          (flux RSS du KiosKe entier)
-    rss/*.xml                        (un flux RSS par catégorie, dans rss/)
-    fonts/russo-one.woff2, fonts/OFL.txt   (police locale et sa licence)
-
-Les caches, bin/, data/, deploy/ et les fichiers de flux ne sortent jamais de la racine du projet.
-
-Usage :
-    python3 bin/publier_public.py                 # construit puis copie
-    python3 bin/publier_public.py --sans-build    # copie seulement ce qui existe déjà
-    python3 bin/publier_public.py --public DIR    # autre dossier de sortie (tests)
+    venv/bin/python bin/publier_public.py                # construit puis copie (ce que lance le timer)
+    venv/bin/python bin/publier_public.py --simple       # construit sans réseau, puis copie
+    venv/bin/python bin/publier_public.py --sans-build   # copie build/ tel quel
 """
-from __future__ import annotations
-
-import argparse
-import os
-import shutil
-import subprocess
 import sys
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent     # bin/
-ROOT = HERE.parent                         # racine du projet
-PUBLIC_DEFAUT = ROOT / "public"
-sys.path.insert(0, str(HERE))
-import garde_immuable  # noqa: E402  (même dossier bin/)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # racine du projet : paquet gauchiasses/
 
-
-def construire(args_build: list[str]) -> None:
-    cmd = [sys.executable, str(HERE / "build_site.py"), *args_build]
-    print("[build] " + " ".join(cmd[1:]), flush=True)
-    subprocess.run(cmd, cwd=ROOT, check=True)
-
-
-def copier(source: Path, cible: Path) -> None:
-    """Copie atomique : écrit un fichier temporaire puis le renomme."""
-    cible.parent.mkdir(parents=True, exist_ok=True)
-    tmp = cible.with_name(cible.name + ".tmp")
-    shutil.copyfile(source, tmp)
-    os.replace(tmp, cible)
-    print(f"[copie] {source.relative_to(ROOT)} -> {cible}", flush=True)
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--sans-build", action="store_true", help="ne pas reconstruire la veille")
-    parser.add_argument("--public", type=Path, default=PUBLIC_DEFAUT, help="dossier de sortie (défaut : public/)")
-    args = parser.parse_args()
-
-    if not args.sans_build:
-        construire([])  # écrit veille.html à la racine
-
-    page = ROOT / "index.html"
-    # La page principale n'est publiée que si son bloc immuable est intact.
-    garde_immuable.verifier_zone(page.read_text(encoding="utf-8"))
-
-    sources = [
-        (page, args.public / "index.html"),
-        (ROOT / "favicon.svg", args.public / "favicon.svg"),
-        (ROOT / "preview.png", args.public / "preview.png"),
-        (ROOT / "apple-touch-icon.png", args.public / "apple-touch-icon.png"),
-        (ROOT / "veille.html", args.public / "veille.html"),
-        (ROOT / "rss.xml", args.public / "rss.xml"),
-        (ROOT / "fonts" / "russo-one.woff2", args.public / "fonts" / "russo-one.woff2"),
-        (ROOT / "fonts" / "OFL.txt", args.public / "fonts" / "OFL.txt"),
-    ]
-    # Un flux RSS par catégorie, généré par build_site.py dans rss/.
-    sources += [(f, args.public / "rss" / f.name) for f in sorted((ROOT / "rss").glob("*.xml"))]
-    for source, cible in sources:
-        if not source.exists():
-            raise SystemExit(f"Fichier absent, rien publié : {source}")
-    for source, cible in sources:
-        copier(source, cible)
-    print("OK : site publié dans", args.public, flush=True)
-
+from gauchiasses.publication import main  # noqa: E402
 
 if __name__ == "__main__":
     main()

@@ -1,16 +1,16 @@
 # ---------- Secrets et configuration personnelle ----------
-# Contient un mot de passe FTP en clair (ancienne méthode, obsolète)
-bin/publish_site.py
 .env
 *.env
 .directory
 
 # ---------- Données et caches générés (recréés par les scripts) ----------
+build/
 data/historique.db
 data/cache/
-veille.html
+data/build.lock
 __pycache__/
 *.pyc
+*.tmp
 
 # ---------- Environnements Python (recréés avec requirements.txt) ----------
 venv/
@@ -28,9 +28,9 @@ index.avant_*.html
 .idea/
 *.swp
 CLAUDE.md
-rss.xml
-bin/sauvegarde_logs.sh
-listes/Kadaj.txt
 .gitignore
+
+# ---------- Listes de cartes gardées hors dépôt ----------
+listes/Kadaj.txt
 listes/SirClap.txt
 listes/Zaza.txt

@@ -1,0 +1,204 @@
+/* Feuille de style du KiosKe (veille.html), insérée dans la page par gauchiasses/themes.py.
+   __FOND__ et __PANNEAU__ sont remplacés par les valeurs du thème par défaut (gauchiasses.cfg). */
+/* Police uniforme du site : fichier local, servi depuis fonts/ (une copie à la racine publiée) */
+@font-face {
+  font-family: "Russo One";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("fonts/russo-one.woff2") format("woff2");
+}
+html, body, body * { font-family: "Russo One", "Courier New", monospace !important; }
+:root {
+  --red: #ffffff;
+  --red-dim: #ffffff;
+  --red-light: #ffffff;
+  --bg: __FOND__;  /* valeur par défaut, choisie dans gauchiasses.cfg (voir FONDS) */
+  --panneau-fond: __PANNEAU__;
+  --panel: #0a0000;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  min-height: 100%;
+  background: var(--bg);
+  background-attachment: fixed;  /* le dégradé reste en place pendant le défilement */
+  color: var(--red);
+  font-family: "Courier New", Courier, monospace;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.panel {
+  position: relative;
+  z-index: 1;
+  max-width: 560px;
+  width: calc(100% - 32px);
+  margin: 2rem auto 1.5rem;
+  padding: 2.5rem 2rem;
+  background: var(--panneau-fond);  /* grand panneau : défini par le thème coché */
+  border: 1px solid var(--red-dim);
+  box-shadow: 0 0 30px color-mix(in srgb, var(--red) 35%, transparent), inset 0 0 20px color-mix(in srgb, var(--red) 10%, transparent);
+  text-align: center;
+}
+.kicker { font-size: 0.85rem; color: var(--red-light); opacity: 0.8; margin-bottom: 1rem; letter-spacing: 0.1em; }
+.retour { display: inline-block; margin-bottom: 1rem; color: var(--red-light); text-decoration: none; border: 1px solid var(--red-light); padding: .35rem .7rem; font-size: .85rem; }
+.retour:hover, .retour:focus-visible { background: var(--red-light); color: #000; }
+.theme-input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.choix-theme { display: flex; justify-content: center; flex-wrap: wrap; gap: .5rem; margin-bottom: 1rem; }
+.choix-theme label { padding: .3rem .7rem; border: 1px solid var(--red-dim); color: var(--red-light); font-size: .8rem; cursor: pointer; }
+.choix-theme label:hover { background: var(--red); color: #000; }
+.theme-input:checked + label { background: var(--red); color: #000; box-shadow: 0 0 12px var(--red); }
+.theme-input:focus-visible + label { outline: 2px solid #fff; outline-offset: 2px; }
+h1 { font-size: clamp(1.8rem, 6vw, 2.8rem); line-height: 1.2; margin-bottom: 1.5rem; text-transform: uppercase; }
+.glow {
+  color: #fff;
+  text-shadow: 0 0 2px var(--red), 0 0 6px var(--red);
+  animation: flicker 4s infinite;
+}
+.cursor { font-size: 1.8rem; line-height: 1; animation: blink 1s steps(1) infinite; }
+/* drapeaux trans de chaque côté du titre (comme sur gauchiasses.fr) */
+.titre-ligne { display: flex; justify-content: center; align-items: center; gap: .3em; white-space: nowrap; }
+.drapeau { font-size: .5em; line-height: 1; }
+@media (max-width: 360px) { .titre-ligne { flex-wrap: wrap; white-space: normal; } }
+.sub { color: var(--red-light); margin-bottom: 1.2rem; }
+.sub-petit { font-size: .8rem; opacity: .7; }
+
+
+@keyframes blink { 50% { opacity: 0; } }
+@keyframes flicker { 0%, 92%, 100% { opacity: 1; } 93% { opacity: 0.4; } 95% { opacity: 1; } 96% { opacity: 0.6; } }
+@media (max-width: 480px) { .panel { padding: 2rem 1.2rem; } }
+
+/* le fond (--bg) et la pluie matricielle (pluie.css) dépendent du thème : voir gauchiasses.cfg */
+@property --rouge { syntax: '<color>'; inherits: true; initial-value: #ff1a1a; }
+
+/* sources : une case par source ; le clic ouvre ses articles dans un panneau (popover, sans JavaScript) */
+.cartes { position: relative; z-index: 1; max-width: 1200px; width: calc(100% - 32px); margin: 0 auto 2rem; }
+.grille { --colonnes: 4; display: grid; grid-template-columns: repeat(var(--colonnes), minmax(0, 1fr)); gap: 1rem; }
+@media (max-width: 960px) { .grille { --colonnes: 3; } }
+@media (max-width: 640px) { .grille { --colonnes: 2; gap: .6rem; } }
+
+.categorie-titre { display: flex; align-items: center; gap: .5rem; width: 100%; margin: 0 0 .8rem;
+  padding: .6rem .9rem; font: inherit; font-size: 1rem; font-weight: 700; text-align: left; text-transform: uppercase;
+  background: var(--panel); color: #fff; border: 1px solid var(--red-dim);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--red) 25%, transparent), inset 0 0 14px color-mix(in srgb, var(--red) 8%, transparent);
+  cursor: pointer; }
+.categorie-titre::after { content: "▸"; margin-left: auto; transition: transform .2s; }
+.categorie-titre:hover, .categorie-titre:focus-visible { color: var(--red-light); outline: none; box-shadow: 0 0 22px var(--red); }
+
+.categorie-panneau { position: fixed; inset: 0; margin: auto;
+  width: min(1100px, calc(100% - 2rem)); height: fit-content; max-height: calc(100vh - 2rem);
+  overflow: auto; padding: 2.2rem 1.4rem 1.4rem; box-sizing: border-box;
+  background: #0a0000; color: var(--red-light); border: 1px solid var(--red);
+  box-shadow: 0 0 30px color-mix(in srgb, var(--red) 50%, transparent), inset 0 0 20px color-mix(in srgb, var(--red) 10%, transparent); }
+.categorie-panneau::backdrop { background: rgba(0, 0, 0, .8); }
+.categorie-panneau h2 { font-size: clamp(1.1rem, 2.6vw, 1.5rem); text-transform: uppercase; color: #fff; margin: 0 2.4rem 1rem 0; }
+.categorie-fermer { position: absolute; top: .5rem; right: .5rem; width: 2rem; height: 2rem; border: 1px solid var(--red-dim); background: #000; color: var(--red); font: inherit; font-size: 1.2rem; cursor: pointer; }
+.categorie-fermer:hover, .categorie-fermer:focus-visible { background: var(--red); color: #000; }
+.compte { font-weight: 400; opacity: .7; font-size: .8rem; }
+
+/* panneau d'un article : s'ouvre au clic sur la carte, dans la page, sans aller sur le site */
+button.carte { font: inherit; padding: 0; cursor: pointer; }
+.article-panneau { position: fixed; inset: 0; margin: auto;
+  width: min(640px, calc(100% - 2rem)); height: fit-content; max-height: calc(100vh - 2rem);
+  overflow: auto; padding: 2.2rem 1.4rem 1.4rem; box-sizing: border-box;
+  background: #0a0000; color: var(--red-light); border: 1px solid var(--red);
+  box-shadow: 0 0 30px color-mix(in srgb, var(--red) 50%, transparent), inset 0 0 20px color-mix(in srgb, var(--red) 10%, transparent);
+  font-size: .95rem; line-height: 1.5; text-align: left; }
+.article-panneau::backdrop { background: rgba(0, 0, 0, .8); }
+.article-panneau h2 { font-size: clamp(1.05rem, 2.6vw, 1.35rem); line-height: 1.25; color: #fff; margin: .4rem 2.4rem .8rem 0; overflow-wrap: anywhere; }
+.article-panneau .meta { font-size: .8rem; opacity: .8; margin-bottom: .2rem; }
+.article-panneau .article-image { border: 1px solid var(--red-dim); background: #140000; margin-bottom: .9rem; max-height: 40vh; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+.article-panneau .article-image img { display: block; width: 100%; height: auto; max-height: 40vh; object-fit: cover; }
+.article-panneau .article-image .lettre { font: 700 3.5rem "Courier New", monospace; color: #fff; text-shadow: 0 0 6px var(--red), 0 0 22px var(--red); padding: 1.2rem 0; }
+.article-texte { margin: 0 0 1.1rem; overflow-wrap: anywhere; color: var(--red-light); }
+.article-lien { display: inline-block; padding: .5rem .8rem; color: var(--red-light); border: 1px solid var(--red-dim); text-decoration: none; overflow-wrap: anywhere; }
+.article-lien:hover, .article-lien:focus-visible { background: var(--red); color: #000; outline: none; box-shadow: 0 0 20px var(--red); }
+
+/* taille des cartes : 75 % de l'ancienne ; tout (cadre, textes, marges, bouton) est réduit du même facteur */
+.carte {
+  position: relative; display: flex; flex-direction: column;
+  width: 75%; margin: 0 auto;
+  aspect-ratio: 3 / 4; overflow: hidden; text-align: left;
+  color: inherit; text-decoration: none;
+  background: rgba(8, 0, 0, .92);
+  border: 1px solid var(--red-dim);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--red) 25%, transparent), inset 0 0 14px color-mix(in srgb, var(--red) 8%, transparent);
+  transition: border-color .2s, box-shadow .2s, transform .2s;
+}
+.carte:hover, .carte:focus-visible { border-color: var(--red); box-shadow: 0 0 22px var(--red); transform: translateY(-2px); outline: none; }
+.carte-image {
+  flex: 0 0 55%; display: flex; align-items: center; justify-content: center; overflow: hidden;
+  border-bottom: 1px solid var(--red-dim); background: #140000;
+}
+.carte-image img { width: 100%; height: 100%; object-fit: cover; object-position: center 25%; display: block; }
+.carte-image .lettre {
+  font: 700 clamp(2.25rem, 6.75vw, 4.125rem) "Courier New", monospace; color: #fff;
+  text-shadow: 0 0 6px var(--red), 0 0 22px var(--red);
+}
+.carte-corps { flex: 1; min-height: 0; overflow: hidden; padding: .45rem .525rem 1.8rem; display: block; }
+.carte .meta { font-size: .4875rem; color: var(--red-light); opacity: .8; margin-bottom: .225rem; }
+.carte .carte-titre { font-size: .615rem; font-weight: 700; line-height: 1.2; text-transform: uppercase; margin-bottom: .225rem; color: #fff; overflow-wrap: anywhere; }
+.carte .carte-extrait { font-size: .54rem; line-height: 1.35; color: var(--red-light); overflow-wrap: anywhere; }
+/* la carte est un bouton : son contenu est fait de <span>, affichés en blocs */
+.carte .meta, .carte .carte-titre, .carte .carte-extrait { display: block; }
+.carte-plus {
+  position: absolute; right: .3375rem; bottom: .3375rem; width: 1.35rem; height: 1.35rem;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--red); background: #000; color: var(--red); font-size: .825rem; transition: all .2s;
+}
+.carte:hover .carte-plus, .carte:focus-visible .carte-plus { background: var(--red); color: #000; box-shadow: 0 0 14px var(--red); }
+
+.mentions { position: relative; z-index: 1; max-width: 1200px; width: calc(100% - 32px); margin: 0 auto 2rem; font-size: .75rem; opacity: .7; text-align: center; }
+.mentions a { color: var(--red-light); }
+/* ----- nuage des sources (même principe que la page principale) ----- */
+.nuage { display: flex; flex-wrap: wrap; justify-content: center; gap: .4rem; margin: 1.2rem 0 0; padding: .7rem;
+  background: #0a0000; border: 1px solid var(--red); box-shadow: 0 0 18px color-mix(in srgb, var(--red) 25%, transparent); }
+.nuage .tag { display: inline-flex; align-items: center; gap: .35rem; padding: .2rem .55rem; border: 1px solid var(--red);
+  border-radius: .3rem; background: none; color: #fff; font: inherit; font-size: .8rem; line-height: 1.4;
+  text-shadow: 0 0 6px #fff; white-space: normal; max-width: 100%; overflow-wrap: anywhere; cursor: pointer; }
+.nuage .tag .nb { font-size: .72rem; opacity: .75; text-shadow: none; white-space: nowrap; }
+.nuage .tag:hover, .nuage .tag:focus-visible { color: #000; background: #fff; text-shadow: none; outline: none; }
+/* catégories : un bloc par catégorie des fichiers de sources/, son nuage à l'intérieur */
+.groupes { margin: 1.2rem 0 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: .8rem; }
+.groupe { min-width: 0; padding: .6rem .7rem .7rem; background: #0a0000; border: 1px solid var(--red);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--red) 25%, transparent); }
+/* téléphone : les étiquettes passent à la ligne au lieu de dépasser du panneau */
+@media (max-width: 640px) {
+  .nuage { min-width: 0; }
+  /* cartes d'articles : une carte par ligne, image en haut, seul le titre est écrit sur la carte (date, source et extrait sont masqués) */
+  .grille { --colonnes: 1; }
+  .carte { width: 100%; aspect-ratio: auto; }
+  .carte-image { flex: 0 0 auto; height: 9.5rem; }
+  .carte-corps { padding: .6rem .8rem 2rem; }
+  .carte .meta, .carte .carte-extrait { display: none; }
+  .carte .carte-titre { font-size: .8rem; margin: 0; }
+}
+.groupe h2 { font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; color: var(--red-light); margin: 0 0 .5rem; font-weight: 700; }
+.groupe .nuage { margin: 0; padding: 0; border: 0; background: none; box-shadow: none; justify-content: flex-start; }
+/* flux RSS de chaque catégorie : petite icône dans le coin haut-droit du bloc, couleurs du drapeau trans */
+.groupe { position: relative; }
+.groupe h2 { padding-right: 2rem; }
+.rss-categorie { position: absolute; top: .45rem; right: .45rem; width: 1.5rem; height: 1.5rem; display: block;
+  border: 1px solid #000; border-radius: .3rem; overflow: hidden; line-height: 0; }
+.rss-categorie svg { display: block; width: 100%; height: 100%; }
+.rss-categorie:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+/* Taille : +25 % sur grand écran (panneau, tuiles des sources et fenêtres de catégorie). */
+@media (min-width: 1100px) {
+  .panel, .cartes, .mentions { zoom: 1.25; }  /* les fenêtres de catégorie sont dans .cartes : elles héritent du zoom */
+  .cartes, .mentions { width: min(960px, calc((100vw - 2rem) / 1.25)); max-width: none; }
+  .categorie-panneau { width: min(880px, calc((100vw - 2rem) / 1.25)); }
+  .article-panneau { width: min(640px, calc((100vw - 2rem) / 1.25)); }
+  /* le zoom agrandit aussi la hauteur : sans cette division, la fenêtre dépasse de l'écran et son bouton de fermeture sort par le haut */
+  .categorie-panneau, .article-panneau { max-height: calc((100vh - 2rem) / 1.25); }
+  .categorie-panneau .grille { --colonnes: 3; }
+}
+/* Écrans larges (PC) : le panneau n'est plus une colonne de téléphone, et la veille tient sur deux colonnes. */
+@media (min-width: 900px) {
+  .panel { max-width: 1000px; padding: 3rem 3.5rem; }
+  .groupes { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+}
+@media (min-width: 1100px) {
+  .panel { width: min(1100px, calc((100vw - 2rem) / 1.25)); max-width: none; }
+}

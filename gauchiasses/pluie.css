@@ -1,0 +1,19 @@
+/* pluie matricielle en CSS pur (thème « pluie » de gauchiasses.cfg) */
+:root {
+  --r-tete: #8f00ff; --r-haut: #ff1a1a; --r-moyen: #b5179e; --r-bas: #4b3fd8;
+}
+#pluie {
+  position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none;
+}
+#pluie i {
+  position: absolute; top: 0;
+  font: normal 16px/1.15 monospace; white-space: pre; text-align: center;
+  color: transparent;
+  background: linear-gradient(to top, var(--r-tete) 0, var(--r-haut) 6%, var(--r-moyen) 30%, color-mix(in srgb, var(--r-bas) 60%, transparent) 60%, transparent 100%);
+  -webkit-background-clip: text; background-clip: text;
+  transform: translateY(-100%);
+  animation-name: chute; animation-timing-function: linear; animation-iteration-count: infinite;
+  will-change: transform;
+}
+@keyframes chute { from { transform: translateY(-100%); } to { transform: translateY(100vh); } }
+@media (prefers-reduced-motion: reduce) { #pluie i { animation: none; transform: translateY(20vh); } }

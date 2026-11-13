@@ -1,40 +1,47 @@
 #!/usr/bin/env bash
-# Déploie nginx pour gauchiasses.fr SUR LE SERVEUR (Debian 13). À lancer en utilisateur normal (meli).
+# Déploie nginx pour le site SUR LE SERVEUR (Debian 13). À lancer en utilisateur normal (meli).
+# Domaine et racine web : lus dans gauchiasses.cfg.
 # Le script demande sudo pour apt, nginx et certbot.
 #
 # Usage :
 #   ./deploy/deployer_nginx.sh --email toi@exemple.fr   # nginx + certificat Let's Encrypt + HTTPS
 #   ./deploy/deployer_nginx.sh --sans-certificat        # HTTP seulement (pour tester ou avant le DNS)
-#   ./deploy/deployer_nginx.sh --desinstaller           # retire le site de gauchiasses.fr de nginx
+#   ./deploy/deployer_nginx.sh --desinstaller           # retire le site de nginx
 #
 # Ce que fait le script, dans l'ordre :
 #   1. installe nginx et certbot (apt) si besoin ;
-#   2. vérifie que nginx peut lire public/ (sinon il s'arrête avec la commande à lancer) ;
-#   3. écrit une configuration HTTP seule et la teste (nginx -t) ;
-#   4. si le DNS de gauchiasses.fr pointe vers ce serveur, demande un certificat Let's Encrypt ;
+#   2. vérifie que nginx peut lire la racine web (sinon il s'arrête avec la commande à lancer) ;
+#   3. écrit une configuration HTTP seule (avec les protections ci-dessous) et la teste (nginx -t) ;
+#   4. si le DNS du domaine pointe vers ce serveur, demande un certificat Let's Encrypt ;
 #   5. écrit la configuration HTTPS, la teste, puis recharge nginx.
 # En cas d'erreur à une étape, la configuration précédente est remise en place.
 # Les autres sites nginx (ex. blog.zarisse.fr) ne sont pas modifiés.
+#
+# Protections écrites dans la configuration (voir README, « Sécurité nginx ») :
+#   - HTTPS seul (HSTS), TLS 1.3 seul, courbes X25519/secp384r1, 0-RTT refusé ;
+#   - version de nginx masquée, méthodes limitées à GET et HEAD ;
+#   - en-têtes de sécurité, politique de contenu : aucun script, aucune police ni feuille de style d'un autre site ;
+#     les images d'un autre site ne sont acceptées qu'en HTTPS (cartes Wikipédia de la page principale) ;
+#   - fichiers cachés refusés ;
+#   - si la page de ban fail2ban est installée (deploy/fail2ban/), elle est incluse dans chaque site.
 set -euo pipefail
 
 DOSSIER="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DOMAINE="gauchiasses.fr"
-RACINE="$DOSSIER/public"
+source "$DOSSIER/deploy/lib_config.sh"  # cfg <section> <clé> : valeurs de gauchiasses.cfg
+DOMAINE="$(cfg site domaine)"
+RACINE="$(cfg serveur racine_web)"  # racine servie : la même que la publication
 DISPO="/etc/nginx/sites-available/$DOMAINE"
 ACTIF="/etc/nginx/sites-enabled/$DOMAINE"
 CERT_DIR="/etc/letsencrypt/live/$DOMAINE"
 WEBROOT_ACME="/var/www/html"
+SNIPPET_BAN="/etc/nginx/snippets/fail2ban-banni.conf"
 EMAIL=""
 SANS_CERT=0
 
-# Page « Tu es banni » (fail2ban, nginx-geo-ban) : créée par fail2ban_hardened/f2b.sh sur le serveur.
-# Incluse dans chaque bloc server seulement si elle existe : sinon nginx refuserait la configuration.
-FAIL2BAN_SNIPPET="/etc/nginx/snippets/fail2ban-banni.conf"
-if [[ -f "$FAIL2BAN_SNIPPET" ]]; then
-    BAN_INCLUDE="    include $FAIL2BAN_SNIPPET; # fail2ban-banni"
-else
-    BAN_INCLUDE="    # fail2ban-banni absent : lance fail2ban_hardened/f2b.sh sur le serveur, puis relance ce script"
-fi
+# Politique de contenu : aucun script, et rien d'un autre site sauf des images en HTTPS.
+# Le KiosKe ne charge que des images du site (téléchargées par le build, servies depuis img/veille/).
+# La page principale affiche les images de Wikipédia (cartes et bloc immuable) : d'où « https: » dans img-src.
+CSP="default-src 'none'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'"
 
 info()    { printf '\033[1;34m[info]\033[0m %s\n' "$*"; }
 avert()   { printf '\033[1;33m[attention]\033[0m %s\n' "$*"; }
@@ -93,26 +100,49 @@ else
     info "nginx et certbot déjà installés"
 fi
 
-# 2. nginx doit pouvoir lire public/ (utilisateur www-data, traversée de /home/meli)
+# 2. nginx (www-data) doit pouvoir lire la racine web
 [[ -d "$RACINE" ]] || erreur "$RACINE absent : lance d'abord l'installation serveur (installer_serveur.sh)."
 if ! sudo -u www-data test -x "$RACINE" || ! sudo -u www-data test -r "$RACINE"; then
-    erreur "nginx (www-data) ne peut pas lire $RACINE. Il faut autoriser la traversée du dossier home, par exemple :
-    sudo chmod o+x /home/$(id -un)
-    (vérifie d'abord que ce changement te convient : il rend le dossier home traversable par tous, sans le lister)"
+    erreur "nginx (www-data) ne peut pas lire $RACINE. Relance deploy/installer_serveur.sh (il crée ce dossier avec les bons droits)."
 fi
 [[ -f "$RACINE/index.html" ]] || avert "$RACINE/index.html n'existe pas encore : le site sera vide jusqu'à la première publication."
 
 sudo mkdir -p "$WEBROOT_ACME/.well-known/acme-challenge"
+
+# Blocs communs aux deux configurations (HTTP et HTTPS), écrits dans les heredocs ci-dessous.
+# Si la page de ban fail2ban existe, elle est incluse : sinon nginx -t échouerait.
+if [[ -f "$SNIPPET_BAN" ]]; then
+    INCLUDE_BAN="    include $SNIPPET_BAN; # fail2ban-banni"
+else
+    INCLUDE_BAN="    # page de ban fail2ban absente : lancer deploy/gauchiasses.sh fail2ban, puis relancer ce script"
+fi
+PROTECTIONS="    # Ne pas annoncer la version de nginx
+    server_tokens off;
+
+    # Site statique : seules les lectures sont acceptées
+    if (\$request_method !~ ^(GET|HEAD)\$) {
+        return 405;
+    }
+
+    # En-têtes de sécurité (always : aussi sur les réponses d'erreur)
+    add_header X-Content-Type-Options \"nosniff\" always;
+    add_header X-Frame-Options \"SAMEORIGIN\" always;
+    add_header Referrer-Policy \"strict-origin-when-cross-origin\" always;
+    add_header Permissions-Policy \"camera=(), microphone=(), geolocation=(), payment=()\" always;
+    add_header Content-Security-Policy \"$CSP\" always;"
 
 # 3. Configuration HTTP seule : sert le site directement, sans redirection
 info "Configuration HTTP seule"
 appliquer_config <<EOF
 # Généré par deploy/deployer_nginx.sh : ne pas éditer à la main (relancer le script).
 server {
-$BAN_INCLUDE
     listen 80;
     listen [::]:80;
     server_name $DOMAINE;
+
+$INCLUDE_BAN
+
+$PROTECTIONS
 
     root $RACINE;
     index index.html;
@@ -121,6 +151,7 @@ $BAN_INCLUDE
         root $WEBROOT_ACME;
     }
 
+    # Fichiers cachés (.git, .env…) : refusés
     location ~ /\. {
         deny all;
         return 404;
@@ -168,7 +199,6 @@ if [[ -d "$CERT_DIR" ]]; then
     appliquer_config <<EOF
 # Généré par deploy/deployer_nginx.sh : ne pas éditer à la main (relancer le script).
 server {
-$BAN_INCLUDE
     listen 80;
     listen [::]:80;
     server_name $DOMAINE;
@@ -183,34 +213,35 @@ $BAN_INCLUDE
 }
 
 server {
-$BAN_INCLUDE
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
     server_name $DOMAINE;
+
+$INCLUDE_BAN
 
     ssl_certificate     $CERT_DIR/fullchain.pem;
     ssl_certificate_key $CERT_DIR/privkey.pem;
+    # TLS 1.3 seul : TLS 1.0, 1.1 et 1.2 sont refusés. (Pour réaccepter 1.2, ajouter « TLSv1.2 » ici.)
+    ssl_protocols       TLSv1.3;
+    # Courbes elliptiques modernes uniquement ; pas de DH classique, pas de reprise de session par ticket.
+    ssl_ecdh_curve      X25519:secp384r1;
+    ssl_prefer_server_ciphers off;
     ssl_session_tickets off;
+    ssl_session_cache   shared:SSL:10m;
+    ssl_session_timeout 10m;
+    # 0-RTT (early data) refusé : pas de rejeu possible.
+    ssl_early_data      off;
+
+    # HTTPS seul, pendant un an
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
+$PROTECTIONS
 
     root $RACINE;
     index index.html;
 
-    # En-têtes de sécurité (always : aussi sur les réponses d'erreur).
-    # Écrits ici en clair, sans fichier à inclure : le déploiement reste autonome.
-    server_tokens off;
-    add_header Strict-Transport-Security "max-age=31536000" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header X-Frame-Options "SAMEORIGIN" always;
-    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-    add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()" always;
-    # Pas de JavaScript sur le site : script-src 'self' suffit. Images : toute source HTTPS.
-    add_header Content-Security-Policy "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'" always;
-
-    # Site statique : seules les lectures sont acceptées
-    if (\$request_method !~ ^(GET|HEAD)\$) {
-        return 405;
-    }
-
+    # Fichiers cachés (.git, .env…) : refusés
     location ~ /\. {
         deny all;
         return 404;
@@ -218,17 +249,6 @@ $BAN_INCLUDE
 
     location / {
         try_files \$uri \$uri/ =404;
-    }
-
-    # add_header dans une location efface ceux du bloc server : on les répète ici
-    location /veille/ {
-        add_header Cache-Control "no-cache" always;
-        add_header Strict-Transport-Security "max-age=31536000" always;
-        add_header X-Content-Type-Options "nosniff" always;
-        add_header X-Frame-Options "SAMEORIGIN" always;
-        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-        add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()" always;
-        add_header Content-Security-Policy "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'" always;
     }
 
     access_log /var/log/nginx/$DOMAINE.access.log;

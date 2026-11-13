@@ -1,4 +1,4 @@
-# Dépendances de la veille (build_site.py, publish_site.py)
+# Dépendances de la veille (bin/build_site.py)
 # Le reste du dossier n'utilise que la bibliothèque standard.
 feedparser==6.0.10
 yt-dlp==2026.10.26

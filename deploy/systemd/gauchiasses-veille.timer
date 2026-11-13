@@ -1,0 +1,13 @@
+# Déclenche gauchiasses-veille.service 2 min après le démarrage, puis à l'intervalle de gauchiasses.cfg (intervalle_timer).
+# Modèle : deploy/installer_serveur.sh remplace __INTERVALLE__.
+[Unit]
+Description=Lance la publication de gauchiasses.fr (toutes les __INTERVALLE__)
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=__INTERVALLE__
+Unit=gauchiasses-veille.service
+Persistent=true
+
+[Install]
+WantedBy=timers.target

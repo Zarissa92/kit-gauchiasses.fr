@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Vérifie la mise en ligne de gauchiasses.fr sur le serveur, et liste ce qui reste à faire à la main.
+# Vérifie la mise en ligne du site sur le serveur, et liste ce qui reste à faire à la main.
+# Domaine, racine web et IP publique : lus dans gauchiasses.cfg.
 # À lancer sur le serveur, en utilisateur normal (meli). sudo est demandé pour nginx et certbot.
 #
 # Usage :
@@ -9,9 +10,11 @@
 # Code de sortie : 0 si tout est OK, 1 si au moins un contrôle échoue.
 set -uo pipefail
 
-DOMAINE="gauchiasses.fr"
-IP_PUBLIQUE="86.238.75.39"
-RACINE="/home/meli/gauchiasses.fr/public"
+DOSSIER="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$DOSSIER/deploy/lib_config.sh"  # cfg <section> <clé> : valeurs de gauchiasses.cfg
+DOMAINE="$(cfg site domaine)" || exit 1
+IP_PUBLIQUE="$(cfg serveur ip_publique)" || exit 1
+RACINE="$(cfg serveur racine_web)" || exit 1
 CERT="/etc/letsencrypt/live/$DOMAINE/cert.pem"
 ALERTE_CERT_JOURS=21
 ALERTE_PUBLICATION_MIN=90
@@ -28,7 +31,7 @@ attention() { printf '\033[1;33m[ ?? ]\033[0m %s\n' "$*"; }
 ip_dns="$(getent ahostsv4 "$DOMAINE" 2>/dev/null | awk 'NR==1{print $1}')"
 if [[ -n "$ip_dns" ]]; then
     bon "DNS $DOMAINE -> $ip_dns"
-    [[ "$ip_dns" == "$IP_PUBLIQUE" ]] || attention "Attendu $IP_PUBLIQUE (ta box). Si ton DNS a changé, mets IP_PUBLIQUE à jour."
+    [[ "$ip_dns" == "$IP_PUBLIQUE" ]] || attention "Attendu $IP_PUBLIQUE (ta box). Si ton DNS a changé, mets ip_publique à jour dans gauchiasses.cfg."
 else
     mauvais "DNS $DOMAINE ne répond pas"
 fi
@@ -54,7 +57,7 @@ fi
 code_page="$(curl -s -m 10 -o /dev/null -w '%{http_code}' --resolve "$DOMAINE:443:127.0.0.1" "https://$DOMAINE/")"
 [[ "$code_page" == "200" ]] && bon "Page principale en HTTPS (local) : 200" || mauvais "Page principale en HTTPS (local) : code $code_page"
 code_veille="$(curl -s -m 10 -o /dev/null -w '%{http_code}' --resolve "$DOMAINE:443:127.0.0.1" "https://$DOMAINE/veille.html")"
-[[ "$code_veille" == "200" ]] && bon "Veille en HTTPS (local) : 200" || mauvais "Veille en HTTPS (local) : code $code_veille"
+[[ "$code_veille" == "200" ]] && bon "KiosKe (veille.html) en HTTPS (local) : 200" || mauvais "KiosKe (veille.html) en HTTPS (local) : code $code_veille"
 code_http="$(curl -s -m 10 -o /dev/null -w '%{http_code}' --resolve "$DOMAINE:80:127.0.0.1" "http://$DOMAINE/")"
 [[ "$code_http" == "301" ]] && bon "HTTP redirige vers HTTPS : 301" || mauvais "HTTP : code $code_http (301 attendu)"
 
@@ -79,15 +82,16 @@ systemctl is-active --quiet certbot.timer && bon "certbot.timer actif (renouvell
 
 # 5. Publication automatique
 systemctl is-active --quiet gauchiasses-veille.timer && bon "Timer de publication actif" || mauvais "Timer gauchiasses-veille inactif : ./deploy/installer_serveur.sh"
-if [[ -f "$RACINE/index.html" ]]; then
-    age_min=$(( ( $(date +%s) - $(stat -c %Y "$RACINE/index.html") ) / 60 ))
+# veille.html est réécrite à chaque passage (index.html ne l'est que si la page principale a changé).
+if [[ -f "$RACINE/veille.html" ]]; then
+    age_min=$(( ( $(date +%s) - $(stat -c %Y "$RACINE/veille.html") ) / 60 ))
     if (( age_min > ALERTE_PUBLICATION_MIN )); then
         mauvais "Dernière publication il y a $age_min min : sudo journalctl -u gauchiasses-veille.service -n 50"
     else
         bon "Dernière publication il y a $age_min min"
     fi
 else
-    mauvais "$RACINE/index.html absent"
+    mauvais "$RACINE/veille.html absent"
 fi
 echo "    Prochain passage : $(systemctl list-timers gauchiasses-veille.timer --no-pager 2>/dev/null | sed -n 2p | awk '{print $1, $2}')"
 
